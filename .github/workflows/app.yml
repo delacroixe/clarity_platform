@@ -1,0 +1,128 @@
+# Application CI/CD workflow
+# Triggered ONLY when application code changes.
+# Builds Docker image, pushes to ECR, updates Lambda.
+
+name: "Application"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  ECR_REPOSITORY: clarity-api
+  LAMBDA_FUNCTION: clarity-api
+
+jobs:
+  test:
+    name: "Lint & Test"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r src/requirements.txt
+          pip install pytest moto[dynamodb] ruff
+
+      - name: Lint with Ruff
+        run: ruff check src/ tests/
+
+      - name: Run tests
+        run: pytest tests/ -v
+        env:
+          AWS_DEFAULT_REGION: eu-west-1
+          SECURITIES_TABLE: clarity-securities
+
+  build-and-deploy:
+    name: "Build & Deploy"
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: sha-${{ github.sha }}
+        working-directory: src
+        run: |
+          docker build --platform linux/arm64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Lambda function
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION }} \
+            --image-uri ${{ steps.build-image.outputs.image }} \
+            --publish
+
+      - name: Wait for Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_FUNCTION }}
+
+      - name: Smoke test
+        run: |
+          # Get API URL from Terraform outputs or construct it
+          API_URL=$(aws apigateway get-rest-apis --query "items[?name=='clarity-api'].id" --output text)
+          BASE_URL="https://${API_URL}.execute-api.${AWS_REGION}.amazonaws.com/v1"
+
+          echo "Testing: $BASE_URL/securities"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/securities")
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ GET /securities returned $STATUS"
+            exit 1
+          fi
+          echo "✅ GET /securities returned 200"
+
+          echo "Testing: $BASE_URL/securities/AAPL/scores"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/securities/AAPL/scores")
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ GET /securities/AAPL/scores returned $STATUS"
+            exit 1
+          fi
+          echo "✅ GET /securities/AAPL/scores returned 200"
+
+          echo "Testing: $BASE_URL/securities/UNKNOWN/scores (expect 404)"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/securities/UNKNOWN/scores")
+          if [ "$STATUS" != "404" ]; then
+            echo "❌ GET /securities/UNKNOWN/scores returned $STATUS (expected 404)"
+            exit 1
+          fi
+          echo "✅ GET /securities/UNKNOWN/scores returned 404"
