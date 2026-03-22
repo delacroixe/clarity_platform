@@ -16,7 +16,6 @@ terraform {
     region         = "eu-central-1"
     encrypt        = true
     dynamodb_table = "clarity-terraform-locks"
-    profile        = "clarity"
   }
 }
 
