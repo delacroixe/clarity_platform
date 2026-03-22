@@ -1,4 +1,4 @@
-.PHONY: help install test lint build run-local diagram clean
+.PHONY: help install test lint build run-local diagram clean push-image deploy
 
 PYTHON := python3
 PIP := pip3
@@ -53,3 +53,13 @@ clean: ## Clean up generated files
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
 	rm -rf .coverage htmlcov/
+
+# --- Docker / ECR ---
+
+push-image: build ## Build and push Docker image to ECR
+	./scripts/push_image.sh
+
+# --- Full Deploy (orchestrated) ---
+
+deploy: lint test ## Full deploy: lint, test, terraform apply (seeds ECR automatically)
+	cd terraform && terraform apply

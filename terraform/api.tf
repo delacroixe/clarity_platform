@@ -25,6 +25,7 @@ resource "aws_lambda_function" "api" {
     aws_iam_role_policy.lambda_dynamodb,
     aws_iam_role_policy.lambda_logs,
     aws_cloudwatch_log_group.lambda,
+    terraform_data.ecr_seed_image,
   ]
 
   tags = {
@@ -64,6 +65,10 @@ resource "aws_api_gateway_method" "proxy" {
   resource_id   = aws_api_gateway_resource.proxy.id
   http_method   = "ANY"
   authorization = "NONE"
+
+  request_parameters = {
+    "method.request.path.proxy" = true
+  }
 }
 
 resource "aws_api_gateway_integration" "proxy" {
@@ -73,6 +78,8 @@ resource "aws_api_gateway_integration" "proxy" {
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = aws_lambda_function.api.invoke_arn
+
+  cache_key_parameters = ["method.request.path.proxy"]
 }
 
 # Root path handler (for / and /docs)
@@ -106,7 +113,9 @@ resource "aws_api_gateway_deployment" "main" {
     redeployment = sha1(jsonencode([
       aws_api_gateway_resource.proxy.id,
       aws_api_gateway_method.proxy.id,
+      aws_api_gateway_method.proxy.request_parameters,
       aws_api_gateway_integration.proxy.id,
+      aws_api_gateway_integration.proxy.cache_key_parameters,
       aws_api_gateway_method.root.id,
       aws_api_gateway_integration.root.id,
     ]))

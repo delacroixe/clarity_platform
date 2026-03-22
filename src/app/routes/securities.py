@@ -1,6 +1,8 @@
 """Securities API routes."""
 
-from fastapi import APIRouter, HTTPException
+import logging
+
+from fastapi import APIRouter, HTTPException, Request
 
 from app.models.schemas import (
     ErrorResponse,
@@ -9,6 +11,8 @@ from app.models.schemas import (
     SecurityScoresResponse,
 )
 from app.services.dynamodb import get_all_securities, get_security_scores
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/securities", tags=["Securities"])
 
@@ -37,8 +41,10 @@ async def list_securities() -> SecuritiesResponse:
         },
     },
 )
-async def get_scores(security_id: str) -> SecurityScoresResponse:
+async def get_scores(security_id: str, request: Request) -> SecurityScoresResponse:
     """GET /securities/{security_id}/scores — returns scores or 404."""
+    req_id = request.headers.get("x-amzn-requestid", "local")
+    logger.info("LAMBDA_INVOKED path=/securities/%s/scores request_id=%s", security_id, req_id)
     item = get_security_scores(security_id)
 
     if item is None:

@@ -38,6 +38,30 @@ resource "aws_ecr_lifecycle_policy" "api" {
   })
 }
 
+# --- ECR Seed Image ---
+# Solves the chicken-and-egg problem: Lambda requires an image in ECR,
+# but the ECR repo doesn't exist until Terraform creates it.
+# This resource builds and pushes the initial image exactly once,
+# after the ECR repo is created. Subsequent image updates are handled
+# by CI/CD (Lambda has ignore_changes on image_uri).
+
+resource "terraform_data" "ecr_seed_image" {
+  # Re-seed only if the repository is recreated (URL changes)
+  input = aws_ecr_repository.api.repository_url
+
+  provisioner "local-exec" {
+    command     = "./scripts/push_image.sh"
+    working_dir = "${path.module}/.."
+
+    environment = {
+      AWS_REGION  = var.aws_region
+      AWS_PROFILE = var.aws_profile != null ? var.aws_profile : ""
+      ECR_REPO    = aws_ecr_repository.api.repository_url
+      IMAGE_TAG   = "latest"
+    }
+  }
+}
+
 # --- IAM Role for Lambda ---
 # Execution role with least-privilege access.
 # This is the "managed identity" — Lambda assumes this role automatically.
