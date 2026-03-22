@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r src/requirements.txt
-          pip install pytest moto[dynamodb] ruff
+          pip install pytest moto[dynamodb] ruff httpx
 
       - name: Lint with Ruff
         run: ruff check src/ tests/

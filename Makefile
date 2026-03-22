@@ -8,7 +8,7 @@ help: ## Show this help
 
 install: ## Install all dependencies (dev + app)
 	$(PIP) install -r src/requirements.txt
-	$(PIP) install pytest moto[dynamodb] ruff diagrams
+	$(PIP) install pytest moto[dynamodb] ruff httpx diagrams
 
 test: ## Run tests with pytest
 	$(PYTHON) -m pytest tests/ -v
