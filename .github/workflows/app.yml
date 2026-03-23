@@ -82,24 +82,24 @@ jobs:
 
       - name: Build, tag, and push image to ECR
         id: build-image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: sha-${{ github.sha }}
-        working-directory: src
-        run: |
-          docker buildx build \
-            --platform linux/arm64 \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
-            --push \
-            .
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:sha-${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+
+      - name: Set image output
+        id: image-output
+        run: echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:sha-${{ github.sha }}" >> $GITHUB_OUTPUT
 
       - name: Update Lambda function
         run: |
           aws lambda update-function-code \
             --function-name ${{ env.LAMBDA_FUNCTION }} \
-            --image-uri ${{ steps.build-image.outputs.image }} \
+            --image-uri ${{ steps.image-output.outputs.image }} \
             --publish
 
       - name: Wait for Lambda update
