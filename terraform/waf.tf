@@ -70,7 +70,7 @@ resource "aws_wafv2_web_acl" "api" {
   }
 }
 
-# Associate WAF with API Gateway stage
+# Associate WAF with API Gateway stage.
 resource "aws_wafv2_web_acl_association" "api" {
   resource_arn = aws_api_gateway_stage.v1.arn
   web_acl_arn  = aws_wafv2_web_acl.api.arn
