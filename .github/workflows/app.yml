@@ -73,6 +73,11 @@ jobs:
         with:
           platforms: arm64
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker    # keep "docker" driver so images land in local store
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
